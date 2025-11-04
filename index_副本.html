@@ -6,38 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
-  
-  <!-- Firebase SDK -->
-  <script type="module">
-    // Import the functions you need from the SDKs you need
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
-    import { getDatabase, ref, push, onChildAdded, onChildRemoved } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-
-    // Your web app's Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyCykK_RTGswJ6l2QEPnFGrjQXl0BujgVrY",
-      authDomain: "fumoto-0226.firebaseapp.com",
-      projectId: "fumoto-0226",
-      storageBucket: "fumoto-0226.firebasestorage.app",
-      messagingSenderId: "441538134557",
-      appId: "1:441538134557:web:9106abefa6aecc923a3cf4",
-      measurementId: "G-EEEFPL8SNV"
-    };
-
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const analytics = getAnalytics(app);
-    const database = getDatabase(app);
-    
-    // 将 Firebase 实例暴露到全局
-    window.firebaseApp = app;
-    window.firebaseDatabase = database;
-    window.firebaseRef = ref;
-    window.firebasePush = push;
-    window.firebaseOnChildAdded = onChildAdded;
-    window.firebaseOnChildRemoved = onChildRemoved;
-  </script>
   <style>
     html, body {
       margin: 0; 
@@ -278,7 +246,6 @@
 
     // 存储所有图钉
     const pins = [];
-    const firebasePins = []; // 存储 Firebase 图钉
     let currentPopupPin = null; // 当前显示浮窗的图钉
     
     // 获取 DOM 元素
@@ -288,8 +255,8 @@
     const publishBtn = document.getElementById('publishBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     
-    // 创建本地图钉的函数（使用 map01.svg）
-    function createLocalPin(lngLat, text = '') {
+    // 创建图钉的函数
+    function createPin(lngLat, text = '') {
       // 创建隐藏的 Mapbox 标记用于地理定位
       const el = document.createElement('div');
       el.style.width = '1px';
@@ -385,102 +352,6 @@
       return pinData;
     }
     
-    // 创建 Firebase 图钉的函数（使用 map02.svg）
-    function createFirebasePin(lngLat, text = '', firebaseKey = null) {
-      // 创建隐藏的 Mapbox 标记用于地理定位
-      const el = document.createElement('div');
-      el.style.width = '1px';
-      el.style.height = '1px';
-      el.style.opacity = '0';
-      el.style.pointerEvents = 'none';
-      
-      const marker = new mapboxgl.Marker({
-        element: el,
-        anchor: 'bottom'
-      })
-        .setLngLat(lngLat)
-        .addTo(map);
-
-      // 创建 SVG 图钉元素（使用 map02.svg）
-      const svgElement = document.createElement('div');
-      svgElement.className = 'pin-svg';
-      
-      const svgImg = document.createElement('img');
-      svgImg.src = 'img/map02.svg';
-      svgElement.appendChild(svgImg);
-      
-      // 添加到页面
-      document.body.appendChild(svgElement);
-
-      // 更新图钉位置的函数
-      function updatePosition() {
-        const point = map.project(lngLat);
-        const container = map.getContainer();
-        const rect = container.getBoundingClientRect();
-        
-        svgElement.style.left = (rect.left + point.x - 24) + 'px';
-        svgElement.style.top = (rect.top + point.y - 48) + 'px';
-      }
-
-      // 监听地图事件更新位置
-      map.on('move', updatePosition);
-      map.on('zoom', updatePosition);
-      map.on('resize', updatePosition);
-
-      // 初始化位置
-      updatePosition();
-
-      // 点击事件 - 显示文字浮窗
-      svgElement.addEventListener('click', (e) => {
-        e.stopPropagation();
-        console.log('Firebase图钉被点击:', text, lngLat);
-        showPinPopup(pinData);
-      });
-
-      // 鼠标悬停效果
-      svgElement.addEventListener('mouseenter', () => {
-        svgElement.setAttribute('_hover', '1');
-        if (svgElement.getAttribute('_active') !== '1') {
-          svgElement.style.transform = 'scale(1.3)';
-        }
-      });
-      
-      svgElement.addEventListener('mouseleave', () => {
-        svgElement.setAttribute('_hover', '0');
-        if (svgElement.getAttribute('_active') !== '1') {
-          svgElement.style.transform = 'scale(1)';
-        }
-      });
-      
-      // 鼠标按下效果
-      svgElement.addEventListener('mousedown', () => {
-        svgElement.setAttribute('_active', '1');
-        svgElement.style.transform = 'scale(0.92)';
-      });
-      
-      svgElement.addEventListener('mouseup', () => {
-        svgElement.setAttribute('_active', '0');
-        if (svgElement.getAttribute('_hover') === '1') {
-          svgElement.style.transform = 'scale(1.3)';
-        } else {
-          svgElement.style.transform = 'scale(1)';
-        }
-      });
-
-      // 保存图钉信息
-      const pinData = {
-        marker,
-        svgElement,
-        lngLat,
-        text,
-        firebaseKey,
-        updatePosition
-      };
-      
-      firebasePins.push(pinData);
-      return pinData;
-    }
-    
     // 显示图钉文字浮窗
     function showPinPopup(pinData) {
       if (!pinData.text) return; // 如果没有文字信息则不显示
@@ -563,7 +434,7 @@
       }
     });
     
-    // 发布按钮 - 创建图钉并保存到 Firebase
+    // 发布按钮 - 创建图钉
     publishBtn.addEventListener('click', () => {
       const text = pinTextInput.value.trim();
       
@@ -573,25 +444,8 @@
       }
       
       if (pendingPinLocation) {
-        console.log("创建图钉并保存到 Firebase:", pendingPinLocation, text);
-        
-        // 保存到 Firebase
-        const pinsRef = window.firebaseRef(window.firebaseDatabase, 'pins');
-        const newPinData = {
-          lng: pendingPinLocation[0],
-          lat: pendingPinLocation[1],
-          text: text,
-          timestamp: Date.now()
-        };
-        
-        window.firebasePush(pinsRef, newPinData)
-          .then(() => {
-            console.log('图钉已保存到 Firebase');
-          })
-          .catch((error) => {
-            console.error('保存到 Firebase 失败:', error);
-            alert('保存失败，请重试');
-          });
+        console.log("创建图钉:", pendingPinLocation, text);
+        createPin(pendingPinLocation, text);
         
         // 清理
         pinEditor.classList.remove('show');
@@ -607,52 +461,13 @@
       pendingPinLocation = null;
     });
 
-    // 地图加载完成后，初始化本地图钉和 Firebase 监听
+    // 地图加载完成后，在新宿站添加测试图钉
     map.on('load', () => {
-      // 创建本地图钉（使用 map01.svg）- 新宿站坐标
+      // 新宿站坐标，带有文字信息
       const shinjukuStation = [139.7006, 35.6896];
-      createLocalPin(shinjukuStation, '新宿站');
-      console.log('已在新宿站添加本地测试图钉（map01.svg）');
+      createPin(shinjukuStation, '新宿站');
       
-      // 初始化 Firebase 监听器（使用 map02.svg）
-      const pinsRef = window.firebaseRef(window.firebaseDatabase, 'pins');
-      
-      // 监听新增的图钉
-      window.firebaseOnChildAdded(pinsRef, (snapshot) => {
-        const data = snapshot.val();
-        const key = snapshot.key;
-        
-        // 检查是否已经存在该图钉（避免重复）
-        const exists = firebasePins.some(pin => pin.firebaseKey === key);
-        if (!exists && data.lng && data.lat) {
-          const lngLat = [data.lng, data.lat];
-          createFirebasePin(lngLat, data.text || '', key);
-          console.log('从 Firebase 加载图钉（map02.svg）:', data.text, lngLat);
-        }
-      });
-      
-      // 监听删除的图钉
-      window.firebaseOnChildRemoved(pinsRef, (snapshot) => {
-        const key = snapshot.key;
-        
-        // 查找并删除对应的图钉
-        const pinIndex = firebasePins.findIndex(pin => pin.firebaseKey === key);
-        if (pinIndex !== -1) {
-          const pin = firebasePins[pinIndex];
-          
-          // 移除标记和 SVG 元素
-          pin.marker.remove();
-          if (pin.svgElement && pin.svgElement.parentNode) {
-            pin.svgElement.parentNode.removeChild(pin.svgElement);
-          }
-          
-          // 从数组中移除
-          firebasePins.splice(pinIndex, 1);
-          console.log('已删除 Firebase 图钉:', key);
-        }
-      });
-      
-      console.log('Firebase 监听器已初始化');
+      console.log('已在新宿站添加测试图钉，点击图钉查看文字信息');
     });
   </script>
 </body>

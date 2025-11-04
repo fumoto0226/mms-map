@@ -233,7 +233,29 @@
   <!-- 图钉文字浮窗 -->
   <div id="pinPopup"></div>
 
-  <script>
+  <script type="module">
+    // Import Firebase SDKs
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-analytics.js";
+    import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-database.js";
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyCykK_RTGswJ6l2QEPnFGrjQXl0BujgVrY",
+      authDomain: "fumoto-0226.firebaseapp.com",
+      databaseURL: "https://fumoto-0226-default-rtdb.firebaseio.com", // Realtime Database URL
+      projectId: "fumoto-0226",
+      storageBucket: "fumoto-0226.firebasestorage.app",
+      messagingSenderId: "441538134557",
+      appId: "1:441538134557:web:9106abefa6aecc923a3cf4",
+      measurementId: "G-EEEFPL8SNV"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const database = getDatabase(app);
+    
     // 初始化地图
     mapboxgl.accessToken = "pk.eyJ1IjoiZnVtb3RvIiwiYSI6ImNtYXhqbGZ4bDBiOWwybHB3a3R5dmk3Z2kifQ.vXgn2UF6HVT0cnnQRmLO1A";
     
@@ -244,7 +266,7 @@
       zoom: 12
     });
 
-    // 存储所有图钉
+    // 存储所有图钉（本地缓存）
     const pins = [];
     let currentPopupPin = null; // 当前显示浮窗的图钉
     
@@ -256,7 +278,7 @@
     const cancelBtn = document.getElementById('cancelBtn');
     
     // 创建图钉的函数
-    function createPin(lngLat, text = '') {
+    function createPin(lngLat, text = '', firebaseKey = null) {
       // 创建隐藏的 Mapbox 标记用于地理定位
       const el = document.createElement('div');
       el.style.width = '1px';
@@ -345,11 +367,22 @@
         svgElement,
         lngLat,
         text,
+        firebaseKey,
         updatePosition
       };
       
       pins.push(pinData);
       return pinData;
+    }
+    
+    // 清除所有图钉（用于重新加载）
+    function clearAllPins() {
+      pins.forEach(pin => {
+        if (pin.marker) pin.marker.remove();
+        if (pin.svgElement) pin.svgElement.remove();
+      });
+      pins.length = 0;
+      hidePopup();
     }
     
     // 显示图钉文字浮窗
@@ -434,7 +467,7 @@
       }
     });
     
-    // 发布按钮 - 创建图钉
+    // 发布按钮 - 创建图钉并保存到 Firebase
     publishBtn.addEventListener('click', () => {
       const text = pinTextInput.value.trim();
       
@@ -445,7 +478,20 @@
       
       if (pendingPinLocation) {
         console.log("创建图钉:", pendingPinLocation, text);
-        createPin(pendingPinLocation, text);
+        
+        // 保存到 Firebase
+        const pinsRef = ref(database, 'pins');
+        push(pinsRef, {
+          lng: pendingPinLocation[0],
+          lat: pendingPinLocation[1],
+          text: text,
+          timestamp: Date.now()
+        }).then(() => {
+          console.log('图钉已保存到 Firebase');
+        }).catch((error) => {
+          console.error('保存图钉失败:', error);
+          alert('保存失败，请重试');
+        });
         
         // 清理
         pinEditor.classList.remove('show');
@@ -461,13 +507,48 @@
       pendingPinLocation = null;
     });
 
-    // 地图加载完成后，在新宿站添加测试图钉
+    // 从 Firebase 加载所有图钉
+    function loadPinsFromFirebase() {
+      const pinsRef = ref(database, 'pins');
+      onValue(pinsRef, (snapshot) => {
+        // 清除现有图钉
+        clearAllPins();
+        
+        const data = snapshot.val();
+        if (data) {
+          console.log('从 Firebase 加载图钉数据:', data);
+          
+          // 遍历所有图钉并创建
+          Object.keys(data).forEach((key) => {
+            const pinData = data[key];
+            createPin(
+              [pinData.lng, pinData.lat],
+              pinData.text,
+              key
+            );
+          });
+          
+          console.log(`已加载 ${Object.keys(data).length} 个图钉`);
+        } else {
+          console.log('没有图钉数据，添加默认新宿站图钉');
+          // 如果没有数据，添加新宿站作为默认图钉
+          const pinsRef = ref(database, 'pins');
+          push(pinsRef, {
+            lng: 139.7006,
+            lat: 35.6896,
+            text: '新宿站',
+            timestamp: Date.now()
+          });
+        }
+      }, (error) => {
+        console.error('加载图钉数据失败:', error);
+      });
+    }
+    
+    // 地图加载完成后，从 Firebase 加载图钉
     map.on('load', () => {
-      // 新宿站坐标，带有文字信息
-      const shinjukuStation = [139.7006, 35.6896];
-      createPin(shinjukuStation, '新宿站');
-      
-      console.log('已在新宿站添加测试图钉，点击图钉查看文字信息');
+      console.log('地图已加载，开始从 Firebase 加载图钉数据...');
+      loadPinsFromFirebase();
     });
   </script>
 </body>

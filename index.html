@@ -33,7 +33,8 @@
     const analytics = getAnalytics(app);
     const database = getDatabase(app);
     const auth = getAuth(app);
-    const storage = getStorage(app);
+    const storage = getStorage(app, "gs://fumoto-0226.firebasestorage.app");
+
     
     // 匿名登录
     signInAnonymously(auth)

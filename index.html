@@ -10,9 +10,11 @@
   <!-- Firebase SDK -->
   <script type="module">
     // Import the functions you need from the SDKs you need
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
-    import { getDatabase, ref, push, onChildAdded, onChildRemoved } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-analytics.js";
+    import { getDatabase, ref, push, onChildAdded, onChildRemoved, onChildChanged, remove, update } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-database.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+    import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-storage.js";
 
     // Your web app's Firebase configuration
     const firebaseConfig = {
@@ -30,14 +32,36 @@
     const app = initializeApp(firebaseConfig);
     const analytics = getAnalytics(app);
     const database = getDatabase(app);
+    const auth = getAuth(app);
+    const storage = getStorage(app);
+    
+    // 匿名登录
+    signInAnonymously(auth)
+      .then(() => {
+        console.log('匿名登录成功，UID:', auth.currentUser.uid);
+        window.currentUID = auth.currentUser.uid;
+        // 通知主脚本登录完成
+        window.dispatchEvent(new Event('firebaseAuthReady'));
+      })
+      .catch((error) => {
+        console.error('匿名登录失败:', error);
+      });
     
     // 将 Firebase 实例暴露到全局
     window.firebaseApp = app;
     window.firebaseDatabase = database;
+    window.firebaseAuth = auth;
+    window.firebaseStorage = storage;
     window.firebaseRef = ref;
     window.firebasePush = push;
     window.firebaseOnChildAdded = onChildAdded;
     window.firebaseOnChildRemoved = onChildRemoved;
+    window.firebaseOnChildChanged = onChildChanged;
+    window.firebaseRemove = remove;
+    window.firebaseUpdate = update;
+    window.firebaseStorageRef = storageRef;
+    window.firebaseUploadBytes = uploadBytes;
+    window.firebaseGetDownloadURL = getDownloadURL;
   </script>
   <style>
     html, body {
@@ -170,6 +194,44 @@
       border-color: #007bff;
     }
     
+    /* 图片上传区域 */
+    .upload-section {
+      margin-top: 12px;
+      padding: 12px;
+      border: 2px dashed #ddd;
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .upload-section:hover {
+      border-color: #007bff;
+      background: #f8f9ff;
+    }
+    
+    .upload-section input {
+      display: none;
+    }
+    
+    .upload-label {
+      color: #666;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    
+    .image-preview {
+      margin-top: 12px;
+      max-width: 100%;
+      max-height: 200px;
+      border-radius: 8px;
+      display: none;
+    }
+    
+    .image-preview.show {
+      display: block;
+    }
+    
     .editor-buttons {
       display: flex;
       gap: 12px;
@@ -214,15 +276,15 @@
       border-radius: 12px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.2);
       padding: 12px 16px;
-      max-width: 250px;
+      max-width: 300px;
       z-index: 500;
-      pointer-events: none;
+      pointer-events: auto;
       font-size: 15px;
       font-weight: 500;
       color: #333;
       opacity: 0;
-      /* 默认状态：在下方，缩小 */
-      transform: translateX(-50%) translateY(20px) scale(0.8);
+      /* 默认状态：在下方，缩小，以底部中心为锚点 */
+      transform: translateX(-50%) translateY(calc(-100% + 20px)) scale(0.8);
       /* 只对 opacity 和 transform 添加过渡，left/top 位置变化不需要过渡 */
       transition: opacity 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), 
                   transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -230,8 +292,8 @@
     
     #pinPopup.show {
       opacity: 1;
-      /* 显示状态：居中，正常大小 */
-      transform: translateX(-50%) translateY(0) scale(1);
+      /* 显示状态：底部居中，正常大小 */
+      transform: translateX(-50%) translateY(-100%) scale(1);
     }
     
     /* 浮窗小三角 */
@@ -247,6 +309,77 @@
       border-right: 8px solid transparent;
       border-top: 8px solid white;
     }
+    
+    /* 浮窗图片 */
+    .popup-image {
+      width: 100%;
+      max-height: 150px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    
+    /* 浮窗时间 */
+    .popup-time {
+      font-size: 12px;
+      color: #999;
+      margin-top: 6px;
+    }
+    
+    /* 浮窗按钮 */
+    .popup-buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    
+    .popup-btn {
+      flex: 1;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .edit-btn {
+      background: #007bff;
+      color: white;
+    }
+    
+    .edit-btn:hover {
+      background: #0056b3;
+    }
+    
+    .delete-btn {
+      background: #dc3545;
+      color: white;
+    }
+    
+    .delete-btn:hover {
+      background: #c82333;
+    }
+    
+    /* 图钉出现弹跳动画 */
+    @keyframes pinBounce {
+      0% {
+        transform: scale(0);
+      }
+      50% {
+        transform: scale(1.3);
+      }
+      70% {
+        transform: scale(0.9);
+      }
+      85% {
+        transform: scale(1.05);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
   </style>
 </head>
 <body>
@@ -257,6 +390,14 @@
   <div id="pinEditor">
     <h3>添加图钉信息</h3>
     <textarea id="pinTextInput" placeholder="请输入图钉的文字信息..."></textarea>
+    
+    <!-- 图片上传区域 -->
+    <div class="upload-section" id="uploadSection">
+      <input type="file" id="imageInput" accept="image/*">
+      <label for="imageInput" class="upload-label">📷 点击上传图片（可选）</label>
+    </div>
+    <img id="imagePreview" class="image-preview" alt="预览">
+    
     <div class="editor-buttons">
       <button id="cancelBtn">取消</button>
       <button id="publishBtn">发布</button>
@@ -281,6 +422,10 @@
     const pins = [];
     const firebasePins = []; // 存储 Firebase 图钉
     let currentPopupPin = null; // 当前显示浮窗的图钉
+    let currentUID = null; // 当前用户 UID
+    let selectedImageFile = null; // 选中的图片文件
+    let isEditMode = false; // 是否为编辑模式
+    let editingPinKey = null; // 正在编辑的图钉 key
     
     // 获取 DOM 元素
     const pinEditor = document.getElementById('pinEditor');
@@ -288,6 +433,28 @@
     const pinPopup = document.getElementById('pinPopup');
     const publishBtn = document.getElementById('publishBtn');
     const cancelBtn = document.getElementById('cancelBtn');
+    const imageInput = document.getElementById('imageInput');
+    const imagePreview = document.getElementById('imagePreview');
+    
+    // 等待 Firebase 认证完成
+    window.addEventListener('firebaseAuthReady', () => {
+      currentUID = window.currentUID;
+      console.log('当前用户 UID:', currentUID);
+    });
+    
+    // 图片预览
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        selectedImageFile = file;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          imagePreview.src = e.target.result;
+          imagePreview.classList.add('show');
+        };
+        reader.readAsDataURL(file);
+      }
+    });
     
     // 创建本地图钉的函数（使用 map01.svg）
     function createLocalPin(lngLat, text = '') {
@@ -387,7 +554,7 @@
     }
     
     // 创建 Firebase 图钉的函数（使用 map02.svg）
-    function createFirebasePin(lngLat, text = '', firebaseKey = null) {
+    function createFirebasePin(lngLat, text = '', firebaseKey = null, uid = null, time = null, imageURL = null) {
       // 创建隐藏的 Mapbox 标记用于地理定位
       const el = document.createElement('div');
       el.style.width = '1px';
@@ -430,43 +597,14 @@
 
       // 初始化位置
       updatePosition();
-
-      // 点击事件 - 显示文字浮窗
-      svgElement.addEventListener('click', (e) => {
-        e.stopPropagation();
-        console.log('Firebase图钉被点击:', text, lngLat);
-        showPinPopup(pinData);
-      });
-
-      // 鼠标悬停效果
-      svgElement.addEventListener('mouseenter', () => {
-        svgElement.setAttribute('_hover', '1');
-        if (svgElement.getAttribute('_active') !== '1') {
-          svgElement.style.transform = 'scale(1.3)';
-        }
-      });
       
-      svgElement.addEventListener('mouseleave', () => {
-        svgElement.setAttribute('_hover', '0');
-        if (svgElement.getAttribute('_active') !== '1') {
-          svgElement.style.transform = 'scale(1)';
-        }
-      });
+      // 添加弹跳出现动画 - 0 -> 1.3(大) -> 0.9(小) -> 1.05 -> 1(正常)
+      svgElement.style.animation = 'pinBounce 0.8s ease-out';
       
-      // 鼠标按下效果
-      svgElement.addEventListener('mousedown', () => {
-        svgElement.setAttribute('_active', '1');
-        svgElement.style.transform = 'scale(0.92)';
-      });
-      
-      svgElement.addEventListener('mouseup', () => {
-        svgElement.setAttribute('_active', '0');
-        if (svgElement.getAttribute('_hover') === '1') {
-          svgElement.style.transform = 'scale(1.3)';
-        } else {
-          svgElement.style.transform = 'scale(1)';
-        }
-      });
+      // 动画结束后移除动画属性，避免影响后续的交互
+      svgElement.addEventListener('animationend', () => {
+        svgElement.style.animation = '';
+      }, { once: true });
 
       // 保存图钉信息
       const pinData = {
@@ -475,8 +613,97 @@
         lngLat,
         text,
         firebaseKey,
+        uid,
+        time,
+        imageURL,
         updatePosition
       };
+
+      // 点击事件 - 显示文字浮窗并放大
+      svgElement.addEventListener('click', (e) => {
+        e.stopPropagation();
+        console.log('Firebase图钉被点击:', text, lngLat);
+        
+        // 添加点击动画效果
+        svgElement.style.transform = 'scale(1.2)';
+        
+        // 根据当前缩放级别调整动画参数
+        const currentZoom = map.getZoom();
+        const targetZoom = 15;
+        const zoomDiff = Math.abs(targetZoom - currentZoom);
+        
+        // 如果缩放差异小，说明只需要平移，速度加快
+        let duration, speed;
+        if (zoomDiff < 2) {
+          // 主要是平移，速度快
+          duration = 800;
+          speed = 2.5;
+        } else if (zoomDiff < 5) {
+          // 中等缩放
+          duration = 1200;
+          speed = 1.8;
+        } else {
+          // 大幅度缩放
+          duration = 2000;
+          speed = 1.2;
+        }
+        
+        // 以图钉坐标为中心放大到 zoom 15
+        map.flyTo({
+          center: lngLat,
+          zoom: targetZoom,
+          duration: duration,
+          curve: 1.42,
+          speed: speed
+        });
+        
+        // 显示浮窗
+        showPinPopup(pinData);
+        
+        // 动画完成后恢复图钉大小
+        setTimeout(() => {
+          if (svgElement.getAttribute('_hover') === '1') {
+            svgElement.style.transform = 'scale(1.3)';
+          } else {
+            svgElement.style.transform = 'scale(1)';
+          }
+        }, duration);
+      });
+
+      // 鼠标悬停效果
+      svgElement.addEventListener('mouseenter', () => {
+        svgElement.setAttribute('_hover', '1');
+        if (svgElement.getAttribute('_active') !== '1') {
+          // 切换到更快的过渡，用于交互
+          svgElement.style.transition = 'transform 0.3s ease';
+          svgElement.style.transform = 'scale(1.3)';
+        }
+      });
+      
+      svgElement.addEventListener('mouseleave', () => {
+        svgElement.setAttribute('_hover', '0');
+        if (svgElement.getAttribute('_active') !== '1') {
+          svgElement.style.transition = 'transform 0.3s ease';
+          svgElement.style.transform = 'scale(1)';
+        }
+      });
+      
+      // 鼠标按下效果
+      svgElement.addEventListener('mousedown', () => {
+        svgElement.setAttribute('_active', '1');
+        svgElement.style.transition = 'transform 0.1s ease';
+        svgElement.style.transform = 'scale(0.92)';
+      });
+      
+      svgElement.addEventListener('mouseup', () => {
+        svgElement.setAttribute('_active', '0');
+        svgElement.style.transition = 'transform 0.3s ease';
+        if (svgElement.getAttribute('_hover') === '1') {
+          svgElement.style.transform = 'scale(1.3)';
+        } else {
+          svgElement.style.transform = 'scale(1)';
+        }
+      });
       
       firebasePins.push(pinData);
       return pinData;
@@ -484,10 +711,62 @@
     
     // 显示图钉文字浮窗
     function showPinPopup(pinData) {
-      if (!pinData.text) return; // 如果没有文字信息则不显示
+      if (!pinData.text && !pinData.imageURL) return; // 如果没有文字和图片则不显示
       
       currentPopupPin = pinData;
-      pinPopup.textContent = pinData.text;
+      
+      // 清空浮窗内容
+      pinPopup.innerHTML = '';
+      
+      // 添加图片（如果有）
+      if (pinData.imageURL) {
+        const img = document.createElement('img');
+        img.src = pinData.imageURL;
+        img.className = 'popup-image';
+        pinPopup.appendChild(img);
+      }
+      
+      // 添加文字
+      if (pinData.text) {
+        const textDiv = document.createElement('div');
+        textDiv.textContent = pinData.text;
+        pinPopup.appendChild(textDiv);
+      }
+      
+      // 添加时间（如果有）
+      if (pinData.time) {
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'popup-time';
+        const date = new Date(pinData.time);
+        timeDiv.textContent = date.toLocaleString('ja-JP');
+        pinPopup.appendChild(timeDiv);
+      }
+      
+      // 如果是自己的图钉，显示编辑和删除按钮
+      if (pinData.uid && currentUID && pinData.uid === currentUID && pinData.firebaseKey) {
+        const buttonsDiv = document.createElement('div');
+        buttonsDiv.className = 'popup-buttons';
+        
+        const editBtn = document.createElement('button');
+        editBtn.className = 'popup-btn edit-btn';
+        editBtn.textContent = '编辑';
+        editBtn.onclick = (e) => {
+          e.stopPropagation();
+          editPin(pinData);
+        };
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'popup-btn delete-btn';
+        deleteBtn.textContent = '删除';
+        deleteBtn.onclick = (e) => {
+          e.stopPropagation();
+          deletePin(pinData);
+        };
+        
+        buttonsDiv.appendChild(editBtn);
+        buttonsDiv.appendChild(deleteBtn);
+        pinPopup.appendChild(buttonsDiv);
+      }
       
       // 先更新位置，再显示（避免闪现）
       updatePopupPosition();
@@ -504,6 +783,52 @@
       currentPopupPin = null;
     }
     
+    // 编辑图钉
+    function editPin(pinData) {
+      hidePopup();
+      
+      // 设置为编辑模式
+      isEditMode = true;
+      editingPinKey = pinData.firebaseKey;
+      
+      // 填充当前内容
+      pinTextInput.value = pinData.text || '';
+      
+      // 如果有图片，显示预览
+      if (pinData.imageURL) {
+        imagePreview.src = pinData.imageURL;
+        imagePreview.classList.add('show');
+      }
+      
+      // 显示编辑器
+      pinEditor.classList.add('show');
+      pinTextInput.focus();
+      
+      // 修改标题
+      const title = pinEditor.querySelector('h3');
+      title.textContent = '编辑图钉信息';
+    }
+    
+    // 删除图钉
+    function deletePin(pinData) {
+      if (!confirm('确定要删除这个图钉吗？')) {
+        return;
+      }
+      
+      hidePopup();
+      
+      // 从 Firebase 删除
+      const pinRef = window.firebaseRef(window.firebaseDatabase, 'pins/' + pinData.firebaseKey);
+      window.firebaseRemove(pinRef)
+        .then(() => {
+          console.log('图钉已删除');
+        })
+        .catch((error) => {
+          console.error('删除失败:', error);
+          alert('删除失败，请重试');
+        });
+    }
+    
     // 更新浮窗位置
     function updatePopupPosition() {
       if (!currentPopupPin) return;
@@ -515,7 +840,7 @@
       // 浮窗显示在图钉上方，偏移 120px（图钉高度 + 更多间距）
       // 只设置 left 和 top，transform 由 CSS 控制（居中和动画）
       pinPopup.style.left = (rect.left + point.x) + 'px';
-      pinPopup.style.top = (rect.top + point.y - 120) + 'px';
+      pinPopup.style.top = (rect.top + point.y - 60) + 'px';
     }
     
     // 监听地图移动更新浮窗位置
@@ -564,48 +889,152 @@
       }
     });
     
-    // 发布按钮 - 创建图钉并保存到 Firebase
-    publishBtn.addEventListener('click', () => {
+    // 发布按钮 - 创建/编辑图钉并保存到 Firebase
+    publishBtn.addEventListener('click', async () => {
       const text = pinTextInput.value.trim();
       
-      if (!text) {
-        alert('请输入文字信息');
+      if (!text && !selectedImageFile) {
+        alert('请输入文字信息或上传图片');
         return;
       }
       
-      if (pendingPinLocation) {
-        console.log("创建图钉并保存到 Firebase:", pendingPinLocation, text);
+      if (!currentUID) {
+        alert('正在登录中，请稍候...');
+        return;
+      }
+      
+      // 禁用按钮，防止重复点击
+      publishBtn.disabled = true;
+      const originalText = publishBtn.textContent;
+      publishBtn.textContent = selectedImageFile ? '上传中...' : '发布中...';
+      
+      try {
+        // 编辑模式
+        if (isEditMode && editingPinKey) {
+          let imageURL = imagePreview.src.startsWith('http') ? imagePreview.src : null;
+          
+          // 如果选择了新图片，上传
+          if (selectedImageFile) {
+            console.log('📸 开始上传图片...');
+            console.log('文件名:', selectedImageFile.name);
+            console.log('文件大小:', (selectedImageFile.size / 1024).toFixed(2), 'KB');
+            
+            const fileName = Date.now() + '_' + selectedImageFile.name;
+            const storageReference = window.firebaseStorageRef(window.firebaseStorage, 'pins/' + fileName);
+            
+            console.log('⬆️ 上传到 Storage...');
+            await window.firebaseUploadBytes(storageReference, selectedImageFile);
+            
+            console.log('🔗 获取下载链接...');
+            imageURL = await window.firebaseGetDownloadURL(storageReference);
+            console.log('✅ 图片已上传:', imageURL);
+          }
+          
+          // 更新 Firebase
+          const pinRef = window.firebaseRef(window.firebaseDatabase, 'pins/' + editingPinKey);
+          const updateData = {
+            text: text
+          };
+          
+          if (imageURL) {
+            updateData.imageURL = imageURL;
+          }
+          
+          await window.firebaseUpdate(pinRef, updateData);
+          console.log('✅ 图钉已更新');
+          
+          // 清理
+          resetEditor();
+        } 
+        // 新建模式
+        else if (pendingPinLocation) {
+          console.log("📍 创建新图钉:", pendingPinLocation);
+          
+          let imageURL = null;
+          
+          // 如果选择了图片，上传到 Firebase Storage
+          if (selectedImageFile) {
+            console.log('📸 开始上传图片...');
+            console.log('文件名:', selectedImageFile.name);
+            console.log('文件大小:', (selectedImageFile.size / 1024).toFixed(2), 'KB');
+            console.log('文件类型:', selectedImageFile.type);
+            
+            const fileName = Date.now() + '_' + selectedImageFile.name;
+            const storageReference = window.firebaseStorageRef(window.firebaseStorage, 'pins/' + fileName);
+            
+            console.log('⬆️ 上传到 Storage 路径:', 'pins/' + fileName);
+            await window.firebaseUploadBytes(storageReference, selectedImageFile);
+            
+            console.log('🔗 获取下载链接...');
+            imageURL = await window.firebaseGetDownloadURL(storageReference);
+            console.log('✅ 图片已上传成功:', imageURL);
+          }
+          
+          // 保存到 Firebase Realtime Database
+          const pinsRef = window.firebaseRef(window.firebaseDatabase, 'pins');
+          const newPinData = {
+            lng: pendingPinLocation[0],
+            lat: pendingPinLocation[1],
+            text: text,
+            uid: currentUID,
+            time: Date.now()
+          };
+          
+          if (imageURL) {
+            newPinData.imageURL = imageURL;
+          }
+          
+          console.log('💾 保存到数据库:', newPinData);
+          await window.firebasePush(pinsRef, newPinData);
+          console.log('✅ 图钉已保存到 Firebase');
+          
+          // 清理
+          resetEditor();
+        }
+      } catch (error) {
+        console.error('❌ 操作失败:', error);
+        console.error('错误代码:', error.code);
+        console.error('错误信息:', error.message);
         
-        // 保存到 Firebase
-        const pinsRef = window.firebaseRef(window.firebaseDatabase, 'pins');
-        const newPinData = {
-          lng: pendingPinLocation[0],
-          lat: pendingPinLocation[1],
-          text: text,
-          timestamp: Date.now()
-        };
+        // 根据错误类型提供具体建议
+        let errorMsg = '操作失败: ' + error.message;
         
-        window.firebasePush(pinsRef, newPinData)
-          .then(() => {
-            console.log('图钉已保存到 Firebase');
-          })
-          .catch((error) => {
-            console.error('保存到 Firebase 失败:', error);
-            alert('保存失败，请重试');
-          });
+        if (error.code === 'storage/unauthorized') {
+          errorMsg = '❌ 图片上传失败：权限不足\n\n请在 Firebase 控制台设置 Storage 规则：\n\nrules_version = \'2\';\nservice firebase.storage {\n  match /b/{bucket}/o {\n    match /pins/{allPaths=**} {\n      allow read: if true;\n      allow write: if request.auth != null;\n    }\n  }\n}';
+        } else if (error.code === 'storage/canceled') {
+          errorMsg = '❌ 上传已取消';
+        } else if (error.code === 'storage/unknown') {
+          errorMsg = '❌ 未知错误，请检查网络连接';
+        }
         
-        // 清理
-        pinEditor.classList.remove('show');
-        pinTextInput.value = '';
-        pendingPinLocation = null;
+        alert(errorMsg);
+      } finally {
+        // 恢复按钮状态
+        publishBtn.disabled = false;
+        publishBtn.textContent = originalText;
       }
     });
     
-    // 取消按钮
-    cancelBtn.addEventListener('click', () => {
+    // 重置编辑器
+    function resetEditor() {
       pinEditor.classList.remove('show');
       pinTextInput.value = '';
+      imageInput.value = '';
+      imagePreview.src = '';
+      imagePreview.classList.remove('show');
+      selectedImageFile = null;
       pendingPinLocation = null;
+      isEditMode = false;
+      editingPinKey = null;
+      
+      // 恢复标题
+      const title = pinEditor.querySelector('h3');
+      title.textContent = '添加图钉信息';
+    }
+    
+    // 取消按钮
+    cancelBtn.addEventListener('click', () => {
+      resetEditor();
     });
 
     // 地图加载完成后，初始化本地图钉和 Firebase 监听
@@ -627,7 +1056,14 @@
         const exists = firebasePins.some(pin => pin.firebaseKey === key);
         if (!exists && data.lng && data.lat) {
           const lngLat = [data.lng, data.lat];
-          createFirebasePin(lngLat, data.text || '', key);
+          createFirebasePin(
+            lngLat, 
+            data.text || '', 
+            key, 
+            data.uid || null, 
+            data.time || null, 
+            data.imageURL || null
+          );
           console.log('从 Firebase 加载图钉（map02.svg）:', data.text, lngLat);
         }
       });
@@ -647,9 +1083,35 @@
             pin.svgElement.parentNode.removeChild(pin.svgElement);
           }
           
+          // 如果当前显示的浮窗是这个图钉，隐藏浮窗
+          if (currentPopupPin && currentPopupPin.firebaseKey === key) {
+            hidePopup();
+          }
+          
           // 从数组中移除
           firebasePins.splice(pinIndex, 1);
           console.log('已删除 Firebase 图钉:', key);
+        }
+      });
+      
+      // 监听图钉更新
+      window.firebaseOnChildChanged(pinsRef, (snapshot) => {
+        const data = snapshot.val();
+        const key = snapshot.key;
+        
+        // 查找对应的图钉并更新
+        const pin = firebasePins.find(p => p.firebaseKey === key);
+        if (pin) {
+          pin.text = data.text || '';
+          pin.imageURL = data.imageURL || null;
+          pin.time = data.time || null;
+          
+          // 如果当前显示的浮窗是这个图钉，更新浮窗内容
+          if (currentPopupPin && currentPopupPin.firebaseKey === key) {
+            showPinPopup(pin);
+          }
+          
+          console.log('图钉已更新:', key);
         }
       });
       

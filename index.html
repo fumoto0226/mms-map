@@ -327,6 +327,50 @@
       margin-top: 6px;
     }
     
+    /* 点赞区域 */
+    .popup-like {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 6px 0;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+    }
+    
+    .popup-like:hover {
+      transform: scale(1.05);
+    }
+    
+    .like-icon {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    
+    .like-icon.liked {
+      animation: likeAnimation 0.5s ease;
+    }
+    
+    @keyframes likeAnimation {
+      0%, 100% { transform: scale(1); }
+      25% { transform: scale(1.3); }
+      50% { transform: scale(0.9); }
+      75% { transform: scale(1.1); }
+    }
+    
+    .like-count {
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+      min-width: 20px;
+    }
+    
     /* 浮窗按钮 */
     .popup-buttons {
       display: flex;
@@ -555,7 +599,7 @@
     }
     
     // 创建 Firebase 图钉的函数（使用 map02.svg）
-    function createFirebasePin(lngLat, text = '', firebaseKey = null, uid = null, time = null, imageURL = null) {
+    function createFirebasePin(lngLat, text = '', firebaseKey = null, uid = null, time = null, imageURL = null, likes = {}) {
       // 创建隐藏的 Mapbox 标记用于地理定位
       const el = document.createElement('div');
       el.style.width = '1px';
@@ -617,6 +661,7 @@
         uid,
         time,
         imageURL,
+        likes: likes || {},
         updatePosition
       };
 
@@ -743,6 +788,38 @@
         pinPopup.appendChild(timeDiv);
       }
       
+      // 添加点赞功能（如果是 Firebase 图钉）
+      if (pinData.firebaseKey) {
+        const likeDiv = document.createElement('div');
+        likeDiv.className = 'popup-like';
+        
+        const likeIcon = document.createElement('span');
+        likeIcon.className = 'like-icon';
+        
+        const likeCount = document.createElement('span');
+        likeCount.className = 'like-count';
+        
+        // 计算点赞数
+        const likes = pinData.likes || {};
+        const likeTotal = Object.keys(likes).length;
+        likeCount.textContent = likeTotal;
+        
+        // 检查当前用户是否已点赞
+        const hasLiked = currentUID && likes[currentUID];
+        likeIcon.textContent = hasLiked ? '❤️' : '🤍';
+        
+        likeDiv.appendChild(likeIcon);
+        likeDiv.appendChild(likeCount);
+        
+        // 点赞事件
+        likeDiv.onclick = async (e) => {
+          e.stopPropagation();
+          await toggleLike(pinData, likeIcon, likeCount);
+        };
+        
+        pinPopup.appendChild(likeDiv);
+      }
+      
       // 如果是自己的图钉，显示编辑和删除按钮
       if (pinData.uid && currentUID && pinData.uid === currentUID && pinData.firebaseKey) {
         const buttonsDiv = document.createElement('div');
@@ -828,6 +905,52 @@
           console.error('删除失败:', error);
           alert('删除失败，请重试');
         });
+    }
+    
+    // 切换点赞状态
+    async function toggleLike(pinData, likeIcon, likeCount) {
+      if (!currentUID) {
+        alert('正在登录中，请稍候...');
+        return;
+      }
+      
+      if (!pinData.firebaseKey) {
+        return;
+      }
+      
+      const likes = pinData.likes || {};
+      const hasLiked = likes[currentUID];
+      
+      try {
+        if (hasLiked) {
+          // 取消点赞
+          const likeRef = window.firebaseRef(window.firebaseDatabase, 'pins/' + pinData.firebaseKey + '/likes/' + currentUID);
+          await window.firebaseRemove(likeRef);
+          delete pinData.likes[currentUID];
+          likeIcon.textContent = '🤍';
+          likeIcon.classList.remove('liked');
+          console.log('💔 取消点赞');
+        } else {
+          // 点赞
+          const likesRef = window.firebaseRef(window.firebaseDatabase, 'pins/' + pinData.firebaseKey + '/likes');
+          const updateData = {};
+          updateData[currentUID] = true;
+          await window.firebaseUpdate(likesRef, updateData);
+          pinData.likes[currentUID] = true;
+          likeIcon.textContent = '❤️';
+          likeIcon.classList.add('liked');
+          console.log('❤️ 点赞成功');
+        }
+        
+        // 更新点赞数显示
+        const likeTotal = Object.keys(pinData.likes).length;
+        likeCount.textContent = likeTotal;
+        
+      } catch (error) {
+        console.error('❌ 点赞操作失败:', error);
+        console.error('错误详情:', error);
+        alert('操作失败，请重试');
+      }
     }
     
     // 更新浮窗位置
@@ -1063,7 +1186,8 @@
             key, 
             data.uid || null, 
             data.time || null, 
-            data.imageURL || null
+            data.imageURL || null,
+            data.likes || {}
           );
           console.log('从 Firebase 加载图钉（map02.svg）:', data.text, lngLat);
         }
@@ -1106,6 +1230,7 @@
           pin.text = data.text || '';
           pin.imageURL = data.imageURL || null;
           pin.time = data.time || null;
+          pin.likes = data.likes || {};
           
           // 如果当前显示的浮窗是这个图钉，更新浮窗内容
           if (currentPopupPin && currentPopupPin.firebaseKey === key) {

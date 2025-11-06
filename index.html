@@ -92,10 +92,14 @@
       border-radius: 50px;
       padding: 12px 24px; 
       font-size: 16px; 
-      font-weight: bold;
+      font-weight: bold; 
       cursor: pointer; 
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3); 
       transition: all 0.3s ease;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
     }
     
     #addPinBtn:hover {
@@ -126,12 +130,20 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
     }
     
     .pin-svg img {
       width: 100%;
       height: 100%;
       pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
     }
     
     /* 隐藏 Mapbox 默认标记 */
@@ -479,7 +491,7 @@
       container: "map",
       style: "mapbox://styles/fumoto/cmhmpsu1v000u01sr4tny40mj",
       center: [139.7006, 35.6896], // 新宿站附近
-      zoom: 12
+      zoom: 14.1
     });
 
     // 存储所有图钉
@@ -699,8 +711,8 @@
         svgElement.style.transform = 'scale(1.2)';
         
         // 定义缩放区间
-        const minZoom = 13;
-        const maxZoom = 17;
+        const minZoom = 14.2;
+        const maxZoom = 15;
         const currentZoom = map.getZoom();
         
         // 计算目标缩放值
@@ -1067,7 +1079,7 @@
       // 浮窗显示在图钉上方，偏移 120px（图钉高度 + 更多间距）
       // 只设置 left 和 top，transform 由 CSS 控制（居中和动画）
       pinPopup.style.left = (rect.left + point.x) + 'px';
-      pinPopup.style.top = (rect.top + point.y - 60) + 'px';
+      pinPopup.style.top = (rect.top + point.y - 70) + 'px';
     }
     
     // 监听地图移动更新浮窗位置

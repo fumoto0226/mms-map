@@ -273,7 +273,7 @@
     /* 图钉文字浮窗 */
     #pinPopup {
       position: absolute;
-      background: white;
+      background: #efefef;
       border-radius: 12px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.2);
       padding: 12px 16px;
@@ -282,7 +282,7 @@
       pointer-events: auto;
       font-size: 15px;
       font-weight: 500;
-      color: #333;
+      color: #515157;
       opacity: 0;
       /* 默认状态：在下方，缩小，以底部中心为锚点 */
       transform: translateX(-50%) translateY(calc(-100% + 20px)) scale(0.8);
@@ -308,7 +308,7 @@
       height: 0;
       border-left: 8px solid transparent;
       border-right: 8px solid transparent;
-      border-top: 8px solid white;
+      border-top: 8px solid #D9D9D9;
     }
     
     /* 浮窗图片 */
@@ -320,11 +320,21 @@
       margin-bottom: 8px;
     }
     
+    /* 底部信息栏（时间+点赞） */
+    .popup-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      padding-top: 8px;
+      gap: 12px;
+    }
+    
     /* 浮窗时间 */
     .popup-time {
-      font-size: 12px;
-      color: #999;
-      margin-top: 6px;
+      font-size: 11px;
+      color: #515157;
+      opacity: 0.7;
     }
     
     /* 点赞区域 */
@@ -332,8 +342,6 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      margin-top: 10px;
-      padding: 6px 0;
       cursor: pointer;
       user-select: none;
       transition: all 0.2s ease;
@@ -343,14 +351,25 @@
       transform: scale(1.05);
     }
     
+    .like-text {
+      font-size: 12px;
+      color: #515157;
+      font-weight: 600;
+    }
+    
     .like-icon {
       width: 20px;
       height: 20px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
       transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    
+    .like-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
     
     .like-icon.liked {
@@ -365,10 +384,10 @@
     }
     
     .like-count {
-      font-size: 14px;
-      font-weight: 500;
-      color: #666;
-      min-width: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #515157;
+      min-width: 16px;
     }
     
     /* 浮窗按钮 */
@@ -458,7 +477,7 @@
     
     const map = new mapboxgl.Map({
       container: "map",
-      style: "mapbox://styles/fumoto/cmc7scka301ds01r70bw30pbf",
+      style: "mapbox://styles/fumoto/cmhmpsu1v000u01sr4tny40mj",
       center: [139.7006, 35.6896], // 新宿站附近
       zoom: 12
     });
@@ -467,6 +486,7 @@
     const pins = [];
     const firebasePins = []; // 存储 Firebase 图钉
     let currentPopupPin = null; // 当前显示浮窗的图钉
+    let isPopupLocked = false; // 浮窗是否被点击锁定
     let currentUID = null; // 当前用户 UID
     let selectedImageFile = null; // 选中的图片文件
     let isEditMode = false; // 是否为编辑模式
@@ -598,7 +618,7 @@
       return pinData;
     }
     
-    // 创建 Firebase 图钉的函数（使用 map02.svg）
+    // 创建 Firebase 图钉的函数（根据内容切换图标）
     function createFirebasePin(lngLat, text = '', firebaseKey = null, uid = null, time = null, imageURL = null, likes = {}) {
       // 创建隐藏的 Mapbox 标记用于地理定位
       const el = document.createElement('div');
@@ -614,12 +634,11 @@
         .setLngLat(lngLat)
         .addTo(map);
 
-      // 创建 SVG 图钉元素（使用 map02.svg）
+      // 创建 SVG 图钉元素（发布内容使用专用图标）
       const svgElement = document.createElement('div');
       svgElement.className = 'pin-svg';
       
       const svgImg = document.createElement('img');
-      svgImg.src = 'img/map02.svg';
       svgElement.appendChild(svgImg);
       
       // 添加到页面
@@ -655,6 +674,7 @@
       const pinData = {
         marker,
         svgElement,
+        svgImg,
         lngLat,
         text,
         firebaseKey,
@@ -662,8 +682,13 @@
         time,
         imageURL,
         likes: likes || {},
-        updatePosition
+        updatePosition,
+        updateIcon: () => {
+          svgImg.src = pinData.imageURL ? 'img/pin2-2.svg' : 'img/pin2-1.svg';
+        }
       };
+
+      pinData.updateIcon();
 
       // 点击事件 - 显示文字浮窗并放大
       svgElement.addEventListener('click', (e) => {
@@ -673,18 +698,34 @@
         // 添加点击动画效果
         svgElement.style.transform = 'scale(1.2)';
         
-        // 根据当前缩放级别调整动画参数
+        // 定义缩放区间
+        const minZoom = 13;
+        const maxZoom = 17;
         const currentZoom = map.getZoom();
-        const targetZoom = 15;
-        const zoomDiff = Math.abs(targetZoom - currentZoom);
         
-        // 如果缩放差异小，说明只需要平移，速度加快
+        // 计算目标缩放值
+        let targetZoom;
+        if (currentZoom < minZoom) {
+          targetZoom = minZoom;
+        } else if (currentZoom > maxZoom) {
+          targetZoom = maxZoom;
+        } else {
+          targetZoom = currentZoom; // 在区间内保持当前缩放
+        }
+        
+        // 根据缩放差异调整动画参数
+        const zoomDiff = Math.abs(targetZoom - currentZoom);
         let duration, speed;
-        if (zoomDiff < 2) {
-          // 主要是平移，速度快
+        
+        if (zoomDiff === 0) {
+          // 只需要平移，速度最快
+          duration = 600;
+          speed = 3;
+        } else if (zoomDiff < 2) {
+          // 轻微缩放
           duration = 800;
           speed = 2.5;
-        } else if (zoomDiff < 5) {
+        } else if (zoomDiff < 4) {
           // 中等缩放
           duration = 1200;
           speed = 1.8;
@@ -694,7 +735,7 @@
           speed = 1.2;
         }
         
-        // 以图钉坐标为中心放大到 zoom 15
+        // 以图钉坐标为中心，调整到目标缩放
         map.flyTo({
           center: lngLat,
           zoom: targetZoom,
@@ -703,7 +744,8 @@
           speed: speed
         });
         
-        // 显示浮窗
+        // 显示浮窗并锁定
+        isPopupLocked = true;
         showPinPopup(pinData);
         
         // 动画完成后恢复图钉大小
@@ -724,6 +766,10 @@
           svgElement.style.transition = 'transform 0.3s ease';
           svgElement.style.transform = 'scale(1.3)';
         }
+        // 显示浮窗（悬浮预览模式，不锁定）
+        if (!isPopupLocked) {
+          showPinPopup(pinData);
+        }
       });
       
       svgElement.addEventListener('mouseleave', () => {
@@ -731,6 +777,14 @@
         if (svgElement.getAttribute('_active') !== '1') {
           svgElement.style.transition = 'transform 0.3s ease';
           svgElement.style.transform = 'scale(1)';
+        }
+        // 只在悬浮预览模式下延迟隐藏浮窗
+        if (!isPopupLocked) {
+          setTimeout(() => {
+            if (pinPopup.getAttribute('_hovering') !== '1' && !isPopupLocked) {
+              hidePopup();
+            }
+          }, 100);
         }
       });
       
@@ -779,45 +833,67 @@
         pinPopup.appendChild(textDiv);
       }
       
-      // 添加时间（如果有）
-      if (pinData.time) {
-        const timeDiv = document.createElement('div');
-        timeDiv.className = 'popup-time';
-        const date = new Date(pinData.time);
-        timeDiv.textContent = date.toLocaleString('ja-JP');
-        pinPopup.appendChild(timeDiv);
-      }
-      
-      // 添加点赞功能（如果是 Firebase 图钉）
-      if (pinData.firebaseKey) {
+      // 创建底部信息栏（时间+点赞）
+      if (pinData.firebaseKey && (pinData.time || true)) {
+        const footerDiv = document.createElement('div');
+        footerDiv.className = 'popup-footer';
+        
+        // 添加时间（如果有）
+        if (pinData.time) {
+          const timeDiv = document.createElement('div');
+          timeDiv.className = 'popup-time';
+          const date = new Date(pinData.time);
+          timeDiv.textContent = '发布于 ' + date.toLocaleString('ja-JP');
+          footerDiv.appendChild(timeDiv);
+        } else {
+          // 占位元素，保持布局
+          const placeholder = document.createElement('div');
+          footerDiv.appendChild(placeholder);
+        }
+        
+        // 添加点赞功能
         const likeDiv = document.createElement('div');
         likeDiv.className = 'popup-like';
-        
-        const likeIcon = document.createElement('span');
-        likeIcon.className = 'like-icon';
-        
-        const likeCount = document.createElement('span');
-        likeCount.className = 'like-count';
         
         // 计算点赞数
         const likes = pinData.likes || {};
         const likeTotal = Object.keys(likes).length;
-        likeCount.textContent = likeTotal;
         
         // 检查当前用户是否已点赞
         const hasLiked = currentUID && likes[currentUID];
-        likeIcon.textContent = hasLiked ? '❤️' : '🤍';
         
+        // 如果是自己点的赞，显示"いいね!"文字
+        if (hasLiked) {
+          const likeText = document.createElement('span');
+          likeText.className = 'like-text';
+          likeText.textContent = 'いいね!';
+          likeDiv.appendChild(likeText);
+        }
+        
+        // 点赞图标
+        const likeIcon = document.createElement('span');
+        likeIcon.className = 'like-icon';
+        const likeImg = document.createElement('img');
+        likeImg.src = hasLiked ? 'img/zan02.svg' : 'img/zan01.svg';
+        likeIcon.appendChild(likeImg);
         likeDiv.appendChild(likeIcon);
-        likeDiv.appendChild(likeCount);
+        
+        // 点赞数（只在有赞时显示）
+        if (likeTotal > 0) {
+          const likeCount = document.createElement('span');
+          likeCount.className = 'like-count';
+          likeCount.textContent = likeTotal;
+          likeDiv.appendChild(likeCount);
+        }
         
         // 点赞事件
         likeDiv.onclick = async (e) => {
           e.stopPropagation();
-          await toggleLike(pinData, likeIcon, likeCount);
+          await toggleLike(pinData, likeDiv);
         };
         
-        pinPopup.appendChild(likeDiv);
+        footerDiv.appendChild(likeDiv);
+        pinPopup.appendChild(footerDiv);
       }
       
       // 如果是自己的图钉，显示编辑和删除按钮
@@ -863,6 +939,7 @@
     
     // 编辑图钉
     function editPin(pinData) {
+      isPopupLocked = false;
       hidePopup();
       
       // 设置为编辑模式
@@ -893,6 +970,7 @@
         return;
       }
       
+      isPopupLocked = false;
       hidePopup();
       
       // 从 Firebase 删除
@@ -908,7 +986,7 @@
     }
     
     // 切换点赞状态
-    async function toggleLike(pinData, likeIcon, likeCount) {
+    async function toggleLike(pinData, likeDiv) {
       if (!currentUID) {
         alert('正在登录中，请稍候...');
         return;
@@ -927,8 +1005,6 @@
           const likeRef = window.firebaseRef(window.firebaseDatabase, 'pins/' + pinData.firebaseKey + '/likes/' + currentUID);
           await window.firebaseRemove(likeRef);
           delete pinData.likes[currentUID];
-          likeIcon.textContent = '🤍';
-          likeIcon.classList.remove('liked');
           console.log('💔 取消点赞');
         } else {
           // 点赞
@@ -937,14 +1013,41 @@
           updateData[currentUID] = true;
           await window.firebaseUpdate(likesRef, updateData);
           pinData.likes[currentUID] = true;
-          likeIcon.textContent = '❤️';
-          likeIcon.classList.add('liked');
           console.log('❤️ 点赞成功');
         }
         
-        // 更新点赞数显示
+        // 重新构建点赞区域
         const likeTotal = Object.keys(pinData.likes).length;
-        likeCount.textContent = likeTotal;
+        const newHasLiked = pinData.likes[currentUID];
+        
+        likeDiv.innerHTML = '';
+        
+        // 如果是自己点的赞，显示"いいね!"文字
+        if (newHasLiked) {
+          const likeText = document.createElement('span');
+          likeText.className = 'like-text';
+          likeText.textContent = 'いいね!';
+          likeDiv.appendChild(likeText);
+        }
+        
+        // 点赞图标
+        const likeIcon = document.createElement('span');
+        likeIcon.className = 'like-icon';
+        if (newHasLiked) {
+          likeIcon.classList.add('liked');
+        }
+        const likeImg = document.createElement('img');
+        likeImg.src = newHasLiked ? 'img/zan02.svg' : 'img/zan01.svg';
+        likeIcon.appendChild(likeImg);
+        likeDiv.appendChild(likeIcon);
+        
+        // 点赞数（只在有赞时显示）
+        if (likeTotal > 0) {
+          const likeCount = document.createElement('span');
+          likeCount.className = 'like-count';
+          likeCount.textContent = likeTotal;
+          likeDiv.appendChild(likeCount);
+        }
         
       } catch (error) {
         console.error('❌ 点赞操作失败:', error);
@@ -970,6 +1073,20 @@
     // 监听地图移动更新浮窗位置
     map.on('move', updatePopupPosition);
     map.on('zoom', updatePopupPosition);
+    
+    // 浮窗鼠标事件 - 防止鼠标移到浮窗上时消失
+    pinPopup.addEventListener('mouseenter', () => {
+      // 标记浮窗正在被悬浮
+      pinPopup.setAttribute('_hovering', '1');
+    });
+    
+    pinPopup.addEventListener('mouseleave', () => {
+      // 鼠标离开浮窗时，只在悬浮预览模式下隐藏
+      pinPopup.setAttribute('_hovering', '0');
+      if (!isPopupLocked) {
+        hidePopup();
+      }
+    });
 
     // 添加图钉模式
     let isAddingPin = false;
@@ -1008,7 +1125,8 @@
         addBtn.classList.remove("active");
         map.getCanvas().style.cursor = '';
       } else {
-        // 点击地图其他地方，隐藏浮窗
+        // 点击地图其他地方，隐藏浮窗并解锁
+        isPopupLocked = false;
         hidePopup();
       }
     });
@@ -1231,6 +1349,9 @@
           pin.imageURL = data.imageURL || null;
           pin.time = data.time || null;
           pin.likes = data.likes || {};
+          if (pin.updateIcon) {
+            pin.updateIcon();
+          }
           
           // 如果当前显示的浮窗是这个图钉，更新浮窗内容
           if (currentPopupPin && currentPopupPin.firebaseKey === key) {
